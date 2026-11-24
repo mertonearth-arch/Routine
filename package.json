@@ -1,0 +1,13 @@
+{
+  "name": "routine-small-float-scan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Twice-daily scan for good news and good financials on low-float and micro-cap US stocks.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.21" },
+  "scripts": {
+    "scan": "node bin/scan.js",
+    "build": "node bin/build.js",
+    "test": "node lib/scan.test.js && node lib/history.test.js && node lib/page.test.js"
+  }
+}
