@@ -43,7 +43,8 @@ next run continues from, live on the published dashboard (`ARTIFACT.md` has the 
    ```
    `verdict` is `confirmed`, `relabel` (the event is real but the label is wrong, e.g. an ATM
    *termination* labelled as an offering) or `unverified` (no primary source found). Keep
-   each `note` under 90 characters and factual. These print as red-pen notes on the page.
+   each `note` under 90 characters and factual. They print under each hit as Verified,
+   Unverified or Relabel.
 
 5. **Build.**
    ```

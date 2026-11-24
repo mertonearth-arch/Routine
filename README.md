@@ -1,8 +1,9 @@
 # Routine — small-float scan
 
 Twice every weekday this scans US-listed stocks with a **float under 50 million shares or a
-market cap under $300 million** for good news and good financials, and prints the result as
-one continuous report: what happened, where it was published, and the dilution it may bring.
+market cap under $300 million** for good news and good financials, and publishes one page:
+each stock's float and market cap drawn to scale against those two lines, what happened,
+where it was published, and the dilution it may bring.
 
 The dashboard link is in [`ARTIFACT.md`](ARTIFACT.md).
 
@@ -61,8 +62,8 @@ Node 22.21 or newer; no dependencies. Thresholds are in `scan.config.json`.
   outstanding as the bound, checks fewer names, and marks itself degraded.
 - Yahoo rate-limits shared cloud IPs. The scan backs off and retries, and marks the run
   partial if any qualifying names could not be checked.
-- Keyword labels are sometimes wrong. Each run checks its hits against the source and writes
-  the verdict next to them in red pen.
+- Keyword labels are sometimes wrong. Each run checks its hits against the source and prints
+  the verdict (Verified, Unverified or Relabel) under each hit.
 
 ## Files
 
@@ -71,7 +72,8 @@ bin/scan.js       the scan
 bin/build.js      renders the page
 lib/scan.js       rules: qualification, headline labels, financial checks
 lib/history.js    run history carried on the dashboard
-lib/page.js       the report page
+lib/page.js       the report page (float and cap meters, events, checks)
+lib/model.js      turns a run into page fields; lib/format.js formatting
 lib/yahoo.js, lib/sec.js, lib/http.js   read-only data access
 scan.config.json  thresholds
 ROUTINE.md        what each scheduled run does
