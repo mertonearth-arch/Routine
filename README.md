@@ -27,6 +27,14 @@ setbacks on small floats, and, for 10 days after a hit, any dilution that follow
 Event types are keyword labels read from headlines. They mark where to look; they are not
 ratings and not a reason to buy.
 
+**Which names get checked:** up to 150 a run (Yahoo throttles bigger runs). Earlier hits
+first, then the day's biggest movers (up 5% or more). With SEC on, up to 40 of the 150 go
+to companies that filed an 8-K in the window without moving, smallest market cap first and
+governance-only filings (vote results, officer changes) last. A big filing day therefore
+cannot push the movers out, and a busy tape cannot push the filings out. Those filers are
+sized with one batch quote per 50 names and go through the same price, volume and cap
+filter as the movers.
+
 ## How it runs
 
 Two scheduled routines (weekdays 06:27 and 22:07 Stockholm time) run in the **Routine**
@@ -39,9 +47,11 @@ publish it with the updated history. Runs never push to git, so this repo stays 
 
 SEC EDGAR requires automated clients to declare a contact. Until `SEC_USER_AGENT` is set as
 a variable on the Routine environment, the scan skips SEC (no 8-K feed, no 90-day dilution
-filing check) and the page says so. Set it to a name and your email, e.g.
-`RoutineScanner you@example.com`, in the environment's settings (cloud environment menu in
-a session's title bar, then Edit). It is deliberately not in this public repo.
+filing check) and the page says "off". Set it in the environment's settings (cloud
+environment menu in a session's title bar, then Edit, Environment variables) as
+`SEC_USER_AGENT=you@example.com`; the scan puts its own name in front. It is deliberately
+not in this public repo. The next run picks it up. If EDGAR then refuses the requests, the
+page says "failed" with the reason, not "off".
 
 ## Commands
 
@@ -62,6 +72,10 @@ Node 22.21 or newer; no dependencies. Thresholds are in `scan.config.json`.
   outstanding as the bound, checks fewer names, and marks itself degraded.
 - Yahoo rate-limits shared cloud IPs. The scan backs off and retries, and marks the run
   partial if any qualifying names could not be checked.
+- EDGAR's submissions API labels acceptance times "Z" but has served New York clock time on
+  some filings. Times come from the 8-K feed, which carries its offset. A filing whose time
+  cannot be settled prints with its date only and may appear in two consecutive runs
+  rather than in none.
 - Keyword labels are sometimes wrong. Each run checks its hits against the source and prints
   the verdict (Verified, Unverified or Relabel) under each hit.
 

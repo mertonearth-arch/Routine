@@ -63,7 +63,8 @@ next run continues from, live on the published dashboard (`ARTIFACT.md` has the 
 
 8. **Report back** in three to five lines: hits with their event types, dilution or negative
    items, the review verdicts, whether the run was degraded (Yahoo session failed), partial
-   (`sources.coverage`) or ran without SEC (`sources.sec.enabled` false), and the dashboard link.
+   (`sources.coverage`), ran without SEC (`sources.sec.enabled` false) or had SEC fail
+   (`sources.sec.ok` false; quote `sources.sec.error`), and the dashboard link.
 
 ## Rules
 

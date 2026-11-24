@@ -121,7 +121,8 @@ async function main() {
     } catch (e) { sources.screenFallback = { ok: false, error: e.message }; }
   }
 
-  // Candidates in priority order: earlier hits (follow-up), SEC filers, movers.
+  // Candidates: earlier hits (follow-up), price movers and, with SEC on, the
+  // window's 8-K filers, chosen within maxCandidates by L.pickCandidates.
   const cand = new Map();
   const add = (ticker, from, seed) => {
     const t = String(ticker || '').toUpperCase();
@@ -133,35 +134,77 @@ async function main() {
     if (seed && seed.cik) c.cik = seed.cik;
     if (seed && seed.followUp) c.followUp = seed.followUp;
   };
+  const up = (t) => String(t || '').toUpperCase();
 
   const earlier = HIST.recentHits(history, cfg.followUpDays);
-  earlier.forEach((e) => add(e.ticker, 'earlier hit', { followUp: e }));
+  const followOf = new Map();
+  earlier.forEach((e) => { if (!followOf.has(up(e.ticker))) followOf.set(up(e.ticker), e); });
   sources.followUps = { recentHits: earlier.length, days: cfg.followUpDays };
 
+  const quoteOf = new Map(); // movers, in screen order (biggest move first)
+  quotes.filter((q) => L.prefilter(q, cfg)).forEach((q) => { if (!quoteOf.has(up(q.symbol))) quoteOf.set(up(q.symbol), q); });
+  sources.screen = Object.assign(sources.screen || {}, { passedPrefilter: quoteOf.size });
+
+  // SEC: who filed an 8-K in the window. Filers that are not movers are sized
+  // with one batch quote per 50 names and put through the movers' filter.
   let cikMap = null;
+  const feedTimes = new Map(); // accession -> the feed's timestamp, which carries its offset
+  const filerInfo = new Map(); // ticker -> { cik, items }
+  const sized = new Map();     // ticker -> batch quote
+  let rankedFilers = [];
   if (SEC.enabled()) {
     try {
       cikMap = await SEC.cikMap();
       const filings = await SEC.recent8Ks(window.from, 6);
-      let mapped = 0;
       filings.forEach((f) => {
+        if (f.accession && f.at) feedTimes.set(f.accession, f.at);
         const t = f.cik !== null ? cikMap.byCik[f.cik] : null;
         if (!t) return;
-        mapped++;
-        add(t, 'sec 8-K', { cik: f.cik });
+        const info = filerInfo.get(t) || { cik: f.cik, items: [] };
+        (f.items || []).forEach((i) => { if (info.items.indexOf(i) === -1) info.items.push(i); });
+        filerInfo.set(t, info);
       });
-      sources.sec = { enabled: true, filings8K: filings.length, mappedToTickers: mapped };
+      sources.sec = { enabled: true, filings8K: filings.length, filers: filerInfo.size };
     } catch (e) { sources.sec = { enabled: true, ok: false, error: e.message }; }
   } else {
     sources.sec = { enabled: false, reason: SEC.disabledReason() };
   }
+  if (filerInfo.size) {
+    const toSize = Array.from(filerInfo.keys()).filter((t) => !quoteOf.has(t) && !followOf.has(t));
+    if (sess && toSize.length) {
+      try { (await Y.quotes(sess, toSize)).forEach((q) => sized.set(up(q.symbol), q)); }
+      catch (e) { sources.sec.sizingError = e.message; }
+    } else if (toSize.length) {
+      sources.sec.note = 'no Yahoo session: ' + toSize.length + ' 8-K filers that did not move could not be sized and were not checked';
+    }
+    const eligible = [];
+    filerInfo.forEach((info, t) => {
+      const q = quoteOf.get(t) || sized.get(t);
+      if (q && (!q.quoteType || q.quoteType === 'EQUITY') && L.prefilter(q, cfg)) eligible.push({ ticker: t, items: info.items, quote: q });
+    });
+    rankedFilers = L.rankFilers(eligible);
+    sources.sec.sized = sized.size;
+    sources.sec.eligible = eligible.length;
+  }
 
-  let movers = 0;
-  quotes.filter((q) => L.prefilter(q, cfg)).forEach((q) => { movers++; add(q.symbol, 'mover', { quote: q }); });
-  sources.screen = Object.assign(sources.screen || {}, { passedPrefilter: movers });
+  const pick = L.pickCandidates(Array.from(followOf.keys()), Array.from(quoteOf.keys()), rankedFilers, cfg);
+  pick.earlier.forEach((t) => add(t, 'earlier hit', { followUp: followOf.get(t), quote: quoteOf.get(t) }));
+  pick.movers.forEach((t) => add(t, 'mover', { quote: quoteOf.get(t) }));
+  pick.filers.forEach((t) => add(t, 'sec 8-K', { quote: quoteOf.get(t) || sized.get(t) }));
+  cand.forEach((c) => {
+    if (quoteOf.has(c.ticker) && c.from.indexOf('mover') === -1) c.from.push('mover');
+    const info = filerInfo.get(c.ticker);
+    if (!info) return;
+    c.cik = info.cik;
+    if (c.from.indexOf('sec 8-K') === -1) c.from.push('sec 8-K');
+  });
+  if (sources.sec.enabled && sources.sec.ok !== false) {
+    sources.sec.filersChecked = Array.from(cand.values()).filter((c) => c.cik).length;
+    sources.sec.nonMoversAdded = pick.filers.filter((t) => !quoteOf.has(t)).length;
+  }
 
-  const universe = cand.size;
-  const candidates = Array.from(cand.values()).slice(0, cfg.maxCandidates);
+  const universe = new Set([].concat(Array.from(followOf.keys()), Array.from(quoteOf.keys()), rankedFilers)).size;
+  const candidates = Array.from(cand.values());
 
   // 3. Metrics: float, shares, cap -----------------------------------------------------
   // Key stats cost one Yahoo request per name, and Yahoo throttles bursts. The
@@ -202,26 +245,30 @@ async function main() {
     return q.ok || !!c.followUp;
   });
 
-  // 4. Events: news, then SEC, then financials where there was a report ----------------
-  await H.mapLimit(qualified, 2, 350, async (c) => {
-    if (overBudget()) { c.events = []; err(c.ticker, 'news', 'skipped: run time budget reached'); return; }
-    try { c.events = L.newsEvents(await Y.news(c.ticker, cfg.newsPerTicker), window, { ticker: c.ticker, name: c.metrics.name }); }
-    catch (e) { c.events = []; err(c.ticker, 'news', e); }
+  // 4. Events: SEC filings and headlines side by side (different hosts, so
+  // neither waits on the other's rate limit), then financials where there was
+  // a report --------------------------------------------------------------------
+  const withCik = SEC.enabled() && cikMap ? qualified.filter((c) => {
+    if (!c.cik && cikMap.byTicker[c.ticker]) c.cik = cikMap.byTicker[c.ticker].cik;
+    return !!c.cik;
+  }) : [];
+  const secStep = H.mapLimit(withCik, 2, 150, async (c) => {
+    if (overBudget()) { err(c.ticker, 'sec submissions', 'skipped: run time budget reached'); return; }
+    try {
+      // The 8-K feed's time, where it has this filing, settles when it was accepted.
+      const filings = (await SEC.submissions(c.cik))
+        .map((f) => Object.assign(f, { feedTime: (f.accession && feedTimes.get(f.accession)) || null }));
+      c.secEvents = L.secEvents(filings, window);
+      c.dilution = L.dilutionCheck(filings, today, cfg);
+    } catch (e) { err(c.ticker, 'sec submissions', e); }
   });
-
-  if (SEC.enabled() && cikMap) {
-    const withCik = qualified.filter((c) => {
-      if (!c.cik && cikMap.byTicker[c.ticker]) c.cik = cikMap.byTicker[c.ticker].cik;
-      return !!c.cik;
-    });
-    await H.mapLimit(withCik, 2, 150, async (c) => {
-      try {
-        const filings = await SEC.submissions(c.cik);
-        c.events = c.events.concat(L.secEvents(filings, window));
-        c.dilution = L.dilutionCheck(filings, today, cfg);
-      } catch (e) { err(c.ticker, 'sec submissions', e); }
-    });
-  }
+  const newsStep = H.mapLimit(qualified, 2, 350, async (c) => {
+    if (overBudget()) { c.newsEvents = []; err(c.ticker, 'news', 'skipped: run time budget reached'); return; }
+    try { c.newsEvents = L.newsEvents(await Y.news(c.ticker, cfg.newsPerTicker), window, { ticker: c.ticker, name: c.metrics.name }); }
+    catch (e) { c.newsEvents = []; err(c.ticker, 'news', e); }
+  });
+  await Promise.all([secStep, newsStep]);
+  qualified.forEach((c) => { c.events = (c.newsEvents || []).concat(c.secEvents || []); });
 
   const reporters = qualified.filter((c) => c.events.some((e) => e.type === 'earnings'));
   await H.mapLimit(reporters, 3, 150, async (c) => {
@@ -300,8 +347,9 @@ async function main() {
   // say so on the page instead of letting the hit count look complete.
   const newsMissed = errors.filter((e) => e.step === 'news').length;
   const statsMissed = errors.filter((e) => e.step === 'key stats').length;
-  report.sources.coverage = { newsMissed: newsMissed, keyStatsMissed: statsMissed, throttleWaits: H.throttleStats.waits429,
-    partial: newsMissed > 0 };
+  const secMissed = errors.filter((e) => e.step === 'sec submissions').length;
+  report.sources.coverage = { newsMissed: newsMissed, keyStatsMissed: statsMissed, secMissed: secMissed,
+    throttleWaits: H.throttleStats.waits429, partial: newsMissed > 0 };
 
   fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(path.join(OUT, 'latest.json'), JSON.stringify(report, null, 2) + '\n');
@@ -319,7 +367,7 @@ function printDigest(r) {
   const s = r.sources;
   console.log('  Yahoo session ' + (s.yahooSession.ok ? 'ok' : 'FAILED (' + s.yahooSession.error + ') — DEGRADED RUN: no float data, smaller universe') +
     ' · screen ' + (s.screen ? (s.screen.ok === false ? 'FAILED' : (s.screen.total || s.screen.returned || 0) + ' movers' + (s.screen.fallback ? ' (fallback ' + s.screen.fallback + ')' : '')) : 'none') +
-    ' · SEC ' + (s.sec.enabled ? (s.sec.ok === false ? 'FAILED (' + s.sec.error + ')' : s.sec.filings8K + ' 8-Ks') : 'skipped: ' + s.sec.reason));
+    ' · SEC ' + (s.sec.enabled ? (s.sec.ok === false ? 'FAILED (' + s.sec.error + ')' : s.sec.filings8K + ' 8-Ks, ' + (s.sec.nonMoversAdded || 0) + ' filers that did not move checked') : 'skipped: ' + s.sec.reason));
   console.log('\nHITS (' + r.hits.length + ')' + (r.hits.length ? '' : '  — nothing qualifying in this window'));
   r.hits.forEach((h) => {
     const e = h.events.find((x) => x.tone === 'positive') || h.events[0];
