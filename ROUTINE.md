@@ -58,7 +58,9 @@ next run continues from, live on the published dashboard (`ARTIFACT.md` has the 
 
 7. **Notify.** If there was at least one hit, send one `PushNotification`:
    `Small-float AM: KRRO (regulatory / clinical), GMRS (buyback / dividend)` (PM for the
-   evening run). Add `partial run` if `sources.coverage.partial` is true. No notification
+   evening run). After a hit whose `shareHistory.flagged` is true, add what it shows, e.g.
+   `QUCY (dilution withdrawn; shares ×21 in 15 months)`. Add `partial run` if
+   `sources.coverage.partial` is true. No notification
    when there are no hits.
 
 8. **Report back** in three to five lines: hits with their event types, dilution or negative

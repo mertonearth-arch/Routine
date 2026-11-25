@@ -273,7 +273,7 @@ async function main() {
   const reporters = qualified.filter((c) => c.events.some((e) => e.type === 'earnings'));
   await H.mapLimit(reporters, 3, 150, async (c) => {
     const lastEarn = c.events.filter((e) => e.type === 'earnings').map((e) => e.date).sort().pop();
-    try { c.financials = L.financialDeltas(await Y.financials(c.ticker), lastEarn, cfg); }
+    try { c.finRaw = await Y.financials(c.ticker); c.financials = L.financialDeltas(c.finRaw, lastEarn, cfg); }
     catch (e) { err(c.ticker, 'financials', e); }
   });
 
@@ -287,6 +287,16 @@ async function main() {
   // Names that make the report get their float and short interest shown.
   const reported = qualified.filter((c) => c.decision.hit || c.decision.negatives.length || c.decision.weakOnly);
   await H.mapLimit(reported, 2, 300, statsFor);
+  // Dilution history for the names on the page (hits first): share count over
+  // ~18 months and reverse splits, from Yahoo, so it shows even without SEC.
+  const forHistory = reported.slice().sort((a, b) => (b.decision.hit ? 1 : 0) - (a.decision.hit ? 1 : 0)).slice(0, 25);
+  await H.mapLimit(forHistory, 2, 300, async (c) => {
+    if (overBudget()) { err(c.ticker, 'share history', 'skipped: run time budget reached'); return; }
+    try {
+      if (!c.finRaw) c.finRaw = await Y.financials(c.ticker);
+      c.shareHistory = L.shareHistory(c.finRaw.OrdinarySharesNumber, await Y.splits(c.ticker), today, cfg);
+    } catch (e) { err(c.ticker, 'share history', e); }
+  });
   reported.forEach((c) => {
     const q = L.qualify(c.metrics, cfg);
     if (q.ok) c.qualifiesBy = q.by; // float known now: say so; it can only tighten the reason, never remove one
@@ -308,6 +318,7 @@ async function main() {
     noise: c.events.filter((e) => e.tone === 'noise').length,
     financials: c.financials || null,
     dilution: c.dilution || null,
+    shareHistory: c.shareHistory || null,
     followUp: c.followUp || null,
   });
 

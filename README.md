@@ -32,6 +32,11 @@ same quarter's numbers count once.
 **Next to every hit:** offerings, ATMs, warrant deals, reverse splits, listing notices and
 setbacks on small floats, and, for 10 days after a hit, any dilution that follows it.
 
+**Share count history:** every name on the page shows its share count over the last ~18
+months (Yahoo's quarterly figures, split-adjusted) and any reverse split in the last two
+years, so serial dilution shows even with SEC off. A count up 30% or more over that span,
+or any reverse split, prints in red: "4.1M (Jun 2025) → … → 87.2M (Sep 2026), ×21.3".
+
 Event types are keyword labels read from headlines. They mark where to look; they are not
 ratings and not a reason to buy.
 
@@ -87,6 +92,10 @@ Node 22.21 or newer; no dependencies. Thresholds are in `scan.config.json`.
 - Repeats are matched by words. A retelling in different words still counts twice, and a
   new event told in the same words (the same designation granted in another region) is
   not counted. The page lists every story it left out, so nothing disappears silently.
+- Share counts are quarterly, so an offering priced since the last report is not in them
+  yet (the SEC dilution check and the dilution section cover that).
+- An earnings hit uses Yahoo's numbers only if the newest quarter on file ended within 100
+  days of the release. Otherwise Yahoo still holds the previous report, and it is not used.
 - Keyword labels are sometimes wrong. Each run checks its hits against the source and prints
   the verdict (Verified, Unverified or Relabel) under each hit.
 
