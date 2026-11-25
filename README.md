@@ -21,6 +21,14 @@ year over year, a turn to profit, or a loss narrowed by 25% or more. Commentary 
 actions and product launches never make a hit on their own. Two outlets describing one print
 differently ("loss widens" vs "beats estimates") is contested and does not count.
 
+**Not a hit twice:** a stock's news gets retold for days ("Update: …", "Why X stock soared",
+a second outlet, the 10-Q after the earnings release). For 10 days after a hit, a positive
+story counts as new only if it is a different story. When two thirds of its content words
+were in an earlier hit's headline (company name, ticker and words like "shares" or "soars"
+left out) and no amount, product code or quarter contradicts it, the page lists it as not
+counted instead. "$75M buyback" retold is a repeat; "additional $50M buyback" is new. The
+same quarter's numbers count once.
+
 **Next to every hit:** offerings, ATMs, warrant deals, reverse splits, listing notices and
 setbacks on small floats, and, for 10 days after a hit, any dilution that follows it.
 
@@ -76,6 +84,9 @@ Node 22.21 or newer; no dependencies. Thresholds are in `scan.config.json`.
   some filings. Times come from the 8-K feed, which carries its offset. A filing whose time
   cannot be settled prints with its date only and may appear in two consecutive runs
   rather than in none.
+- Repeats are matched by words. A retelling in different words still counts twice, and a
+  new event told in the same words (the same designation granted in another region) is
+  not counted. The page lists every story it left out, so nothing disappears silently.
 - Keyword labels are sometimes wrong. Each run checks its hits against the source and prints
   the verdict (Verified, Unverified or Relabel) under each hit.
 

@@ -62,7 +62,8 @@ next run continues from, live on the published dashboard (`ARTIFACT.md` has the 
    when there are no hits.
 
 8. **Report back** in three to five lines: hits with their event types, dilution or negative
-   items, the review verdicts, whether the run was degraded (Yahoo session failed), partial
+   items, stories not counted because they retell an earlier hit (`repeatsOfEarlierHits`), the
+   review verdicts, whether the run was degraded (Yahoo session failed), partial
    (`sources.coverage`), ran without SEC (`sources.sec.enabled` false) or had SEC fail
    (`sources.sec.ok` false; quote `sources.sec.error`), and the dashboard link.
 

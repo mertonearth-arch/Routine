@@ -317,7 +317,13 @@ async function main() {
   const weakList = qualifiedNow.filter((c) => c.decision.weakOnly && !c.decision.negatives.length);
   // Real (non-noise) headlines the rules did not label: the routine skims these,
   // because keyword rules miss some good news.
+  // Earlier hits whose story was told again in this window: not counted as new,
+  // listed so the page can say what was left out and why.
+  const repeatList = qualified.filter((c) => !c.decision.hit && c.decision.repeats.length)
+    .map((c) => ({ ticker: c.ticker, name: c.metrics.name, earlierHitAt: c.followUp ? c.followUp.hitAt : null,
+      earlierHeadline: c.followUp ? c.followUp.headline : null, stories: c.decision.repeats.slice(0, 3) }));
   const otherNews = qualifiedNow.filter((c) => !c.decision.hit && !c.decision.negatives.length && !c.decision.weakOnly &&
+    !c.decision.repeats.length &&
     c.events.some((e) => e.tone !== 'noise'))
     .map((c) => ({ ticker: c.ticker, name: c.metrics.name, contested: c.decision.contested,
       headlines: c.events.filter((e) => e.tone !== 'noise').slice(0, 3).map((e) => ({ date: e.date, at: e.at, type: e.type, tone: e.tone, publisher: e.publisher, headline: e.headline, url: e.url })) }));
@@ -334,10 +340,11 @@ async function main() {
     },
     sources: sources,
     counts: { universe: universe, candidates: candidates.length, qualified: qualifiedNow.length, hits: hitList.length,
-      dilutionOrNegative: negList.length, weakSignals: weakList.length, otherNews: otherNews.length, errors: errors.length },
+      dilutionOrNegative: negList.length, weakSignals: weakList.length, repeats: repeatList.length, otherNews: otherNews.length, errors: errors.length },
     hits: hitList.map(view),
     dilutionOrNegative: negList.map(view),
     weakSignals: weakList.map(view),
+    repeatsOfEarlierHits: repeatList,
     otherNews: otherNews.slice(0, 40),
     excludedLargeLowShareCount: excluded.slice(0, 15),
     errors: errors.slice(0, 40),
@@ -383,6 +390,10 @@ function printDigest(r) {
       const e = h.events.find((x) => x.tone === 'dilution' || x.tone === 'negative');
       console.log('  ' + h.ticker.padEnd(6) + (h.followUp ? '[earlier hit] ' : '') + (e ? e.type + ' — ' + String(e.headline).slice(0, 100) : ''));
     });
+  }
+  if ((r.repeatsOfEarlierHits || []).length) {
+    console.log('\nNOT COUNTED — same story as an earlier hit (' + r.repeatsOfEarlierHits.length + ')');
+    r.repeatsOfEarlierHits.forEach((x) => console.log('  ' + x.ticker.padEnd(6) + String(x.stories[0].headline).slice(0, 100)));
   }
   if (r.weakSignals.length) {
     console.log('\nWEAK SIGNALS ONLY — analyst actions / launches (' + r.weakSignals.length + ')');
